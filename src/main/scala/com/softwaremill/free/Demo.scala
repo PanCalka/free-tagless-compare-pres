@@ -4,7 +4,7 @@ import java.util.UUID
 
 import cats.free.Free
 import cats.implicits._
-import cats.~>
+import cats.{Monad, ~>}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -64,4 +64,33 @@ object UsingFree {
   var r = addPoints(UUID.randomUUID(), 10).foldMap(futureInterpreter)
 }
 
-object UsingTagless {}
+object UsingTagless {
+  trait UserRepositoryAlg[F[_]] {
+    def findUser(id: UUID): F[Option[User]]
+
+    def updateUser(u: User): F[Unit]
+  }
+
+  class LoyaltyPoints[F[_]: Monad](ur: UserRepositoryAlg[F]) {
+    def addPoints(userId: UUID, pointsToAdd: Int): F[Either[String, Unit]] = {
+      ur.findUser(userId).flatMap {
+        case None => implicitly[Monad[F]].pure(Left("User not found"))
+        case Some(user) =>
+          val updated =
+            user.copy(loyaltyPoints = user.loyaltyPoints + pointsToAdd)
+          ur.updateUser(updated).map(_ => Right(()))
+      }
+    }
+  }
+  trait FutureInterpreter extends UserRepositoryAlg[Future] {
+    override def findUser(id: UUID): Future[Option[User]] = {
+      //go to db
+      Future.successful(None)
+    }
+
+    override def updateUser(u: User): Future[Unit] = Future.successful(())
+
+  }
+
+  new LoyaltyPoints(new FutureInterpreter {}).addPoints(UUID.randomUUID(), 10)
+}
